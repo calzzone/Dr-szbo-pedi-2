@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/554122/e376488bf47e4d48b2e8fbc065e05188
+bundleId: https://api.rpubs.com/api/v1/document/554122/e376488bf47e4d48b2e8fbc065e05188
+url: http://rpubs.com/alex_istrate/554122
+when: 1579217209.6662

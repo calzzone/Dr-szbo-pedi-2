@@ -1,0 +1,1080 @@
+---
+title: "Role of adiponectin and TNF-alpha in the pathogenesis and evolution of type 1 diabetes mellitus"
+author: "author"
+output:
+  word_document:
+    keep_md: yes
+    fig_caption: yes
+    fig_height: 7.5
+    fig_width: 3
+    toc: yes
+    toc_depth: 4
+    reference_docx: drszabo_template.docx
+  html_document: 
+    keep_md: yes
+    df_print: kable
+    theme: readable
+    fig_caption: yes
+    fig_height: 3
+    fig_width: 7.5
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+    toc_float: no
+---
+
+```{r setup, echo=F, message=F, warning=F, results='hide'}
+library(tidyverse)
+#library(ggExtra) # ggMarginal()
+#library(cowplot) # plot_grid
+library(ggpubr)
+library(ggthemes)
+#library(ggcorrplot)
+#library(GGally) #ggpairs
+#library(dplyr)
+library(readxl)
+library(grid)
+
+library(pander)
+panderOptions('digits', 2)
+panderOptions('round', 2)
+panderOptions('keep.trailing.zeros', TRUE)
+options(scipen = 999)
+options(digits = 3)
+
+library(knitr)
+#library(formattable)
+library(kableExtra)
+
+#library(ggfortify)
+#library(survival)
+
+library(Hmisc)
+#library(stringr)
+library(DescTools)
+
+
+options(knitr.table.format = "pandoc")
+
+knitr::opts_chunk$set(comment = NA)
+
+library(captioner)
+fig_caption <- captioner::captioner("Figure")
+tab_caption <- captioner::captioner("Table")
+
+options(knitr.table.format = "pandoc")
+
+MAIN.FONT <- "Times New Roman"
+
+# set orthogonal contrasts
+# options(contrasts = c("contr.sum", "contr.poly"))
+
+# regular contrasts
+# options(contrasts = c("contr.treatment", "contr.poly"))
+
+set.seed(1)
+```
+
+```{r Source scripts, message=F, warning=F, echo=F, results='hide'}
+base_path = "~/Dropbox/Stats/"
+
+source(paste0(base_path, 'R library/search_for_variable.R'), echo=F)
+source(paste0(base_path, 'R library/mySSby.R'), echo=F)
+source(paste0(base_path, 'R library/mySSby3.R'), echo=F) # replace finalfit
+source(paste0(base_path, 'R library/describe_numerice1.R'), echo=F)
+source(paste0(base_path, 'R library/contingency.R'), echo=F)
+source(paste0(base_path, 'R library/describe2x2_v1.R'), echo=F)
+source(paste0(base_path, 'R library/mytheme.R'), echo=F)
+source(paste0(base_path, 'R library/assorted bits.R'), echo=F)
+source(paste0(base_path, 'R library/custom_charts.R'), echo=F)
+
+# theme_set(my_theme(base_theme = theme_grey))
+
+setwd(paste0(base_path, "Dr szbo pedi 2"))
+```
+
+```{r Import data, echo=F, message=F, warning=F, fig.height=4, fig.width=6}
+
+metadata <- suppressWarnings(read_excel("Baza de date citokine (5 oct) .xlsx", sheet = "metadata"))
+
+baza_de_date <- suppressWarnings(read_excel("Baza de date citokine (5 oct) .xlsx", col_types = metadata$Type)) %>% 
+  #mutate(`Invaliditate/Grad` = str_remove_all(`Invaliditate/Grad`, "x")) %>%
+  labelled::set_variable_labels(.labels = metadata$Var) %>% 
+  mutate_at(metadata$ID[ #metadata$Type %in% c("text") & 
+              metadata$Role %in% c("danu" ,"binary", "factor", "ordered", "likert")], as.factor_metadata, metadata=metadata) %>% 
+  labelled::set_variable_labels(.labels = metadata$Label) %>%
+  #select(-c("ID", "Nume")) %>%
+  select(-c(metadata$Var[metadata$Role=="exclude"])) %>%
+  select(-c(metadata$Var[metadata$Role=="id"]))
+
+
+# s <- "Other complications"
+# separate_metadata(baza_de_date, s, metadata = metadata, exact = F, add.prefix=F) %>% str
+
+for (col in metadata$Var[metadata$Role=="numeric"]) {
+  metadata <- update_var_metadata(DB = baza_de_date, metadata = metadata, var = col)
+  
+  #plot(my_histo(baza_de_date, col, NULL, metadata, F))
+}
+
+my.groups <- list()
+
+for (gr in unique(na.omit(metadata$Group))) {
+  my.groups[[gr]] <- make_groups_metadata(gr, metadata)
+}
+
+for (s in metadata$Var[metadata$Role == "separate"]) {
+  #print(s)
+  temp <- separate_metadata(baza_de_date, s, metadata = metadata, exact = F, add.prefix=F)
+  #group <- metadata$Group[metadata$Var == s]
+  group <- metadata.var_to_labels(s, metadata)
+  
+  # temp <- labelled::set_variable_labels(temp, .labels = names(temp))
+  
+  for (x in 1:ncol(temp)) 
+    if (names(temp)[x] %in% names(baza_de_date))
+      names(temp)[x] <- names(temp) %+% " "
+    
+  baza_de_date %<>% select(-c(s)) %>% bind_cols(temp)
+  my.groups[[group]] <- names(temp)
+  metadata <- make_metadata(DB = baza_de_date, vars = names(temp), existing.metadata = metadata, 
+                            label = as.character(labelled::var_label(temp)),
+                            group = group)
+  
+}
+
+baza_de_date %<>% select(unlist(my.groups, use.names = F))
+
+# for (gr in sort(names(my.groups))) {
+#   print(gr)
+#   print(summary(baza_de_date[my.groups[[gr]]]))
+# }
+# summary(baza_de_date, maxsum = 10)
+#DescTools::Desc(baza_de_date)
+
+# summary(my.groups)
+# my.groups
+
+
+```
+
+```{r, echo=F, message=F, warning=F, fig.height=4, fig.width=6, eval=F, include=F}
+
+anthro_zscores_518 <- function(db, path = paste0(getwd(), "/who2007_r/"), save.to = "temp", 
+                               sex="Sex", age_mo="Age", weight_kg="Weight", height_cm="Height") {
+  
+  # print (path)
+  # print(path %+% "wfawho2007.txt")
+  wfawho2007<-read.delim(path %+% "wfawho2007.txt")
+  hfawho2007<-read.delim(path %+% "hfawho2007.txt")
+  bfawho2007<-read.delim(path %+% "bfawho2007.txt")
+  
+  # survey.who2007<-read.csv(path %+% "survey_who2007.csv", header=T, sep=",", skip=0, na.strings="")
+  
+  source(path %+% "who2007.r")
+  
+  cn <- colnames(db)
+  cn[cn==sex] <- "sex"
+  cn[cn==age_mo] <- "age_mo"
+  cn[cn==weight_kg] <- "weight_kg"
+  cn[cn==height_cm] <- "height_cm"
+  colnames(db) <- cn
+  db$sex = as.character(db$sex)
+  
+  who2007(#FileLab = "survey_who2007", 
+          FilePath = path, 
+          mydf = db,
+          sex = "sex", age = "age_mo", weight = "weight_kg", height = "height_cm")
+}
+
+# unexclude "Scor Z BMI" #, "Percentila BMI"
+
+db1 <-baza_de_date[c("ID", "Sex", "Age (years)", "Weight (kg)", "BMI", "Scor Z BMI")] %>%
+               mutate(#`ID` = 1:nrow(baza_de_date), 
+                      `Age (days)` = `Age (years)`*365.25,
+                      `Age (months)` = `Age (years)`*12, 
+                      `Height (cm)` = sqrt(`Weight (kg)`/`BMI`)*100)
+
+db2_05 <- with(db1, anthro::anthro_zscores(sex = as.character(`Sex`),
+                                           age = `Age (days)`,# age = `Age at onset (years)`/356.25, 
+                                           weight = `Weight (kg)`, 
+                                           lenhei = `Height (cm)`))
+
+db2_518 <- anthro_zscores_518(db = db1, 
+                              path = getwd() %+% "/who2007_r/",
+                              sex = "Sex",
+                              age_mo = "Age (months)",
+                              weight_kg = "Weight (kg)", 
+                              height_cm = "Height (cm)")
+
+db3 <- cbind(db1, db2_05[c("zlen", "zbmi", "zwei", "zwfl")])
+db3$`zlen`[is.na(db3$`zlen`)] <- db2_518$`zhfa`[is.na(db3$`zlen`)]
+db3$`zbmi`[is.na(db3$`zbmi`)] <- db2_518$`zbfa`[is.na(db3$`zbmi`)]
+db3$`zwei`[is.na(db3$`zwei`)] <- db2_518$`zwfa`[is.na(db3$`zwei`)]
+
+write.csv(db3, "db3.csv", na="")
+
+
+
+db3 %>% ggplot() +
+  aes(x=`Scor Z BMI`, y=`zbmi`) +
+  facet_grid(.~`Sex`) +
+  geom_abline(color="white", size=1)+
+  
+  geom_point(alpha=0.75, aes(fill=`Age (years)`), size=3, shape=21, color="grey") + 
+  geom_smooth(fullrange=T, se=F, method = lm, size=0.25)+
+  geom_smooth(fullrange=T, se=F, method = deming, size=0.25, color="black")+
+  # ggrepel::geom_text_repel(aes(label=`Scor Z BMI`), size=2, hjust=0.5, vjust=0.5, color="grey30", segment.color = "grey30", segment.size = 0.2)+
+  
+  scale_fill_distiller("Age (years)", palette = "Spectral", breaks=0:18)+
+  legend.top + theme(legend.key.width = unit(20, "mm")) +
+  
+  scale_x_continuous(limits=c(-10, 10), breaks=-10:10) +
+  scale_y_continuous(limits=c(-10, 10), breaks=-10:10) +
+  coord_equal(xlim=c(-3.1, 3.1), ylim=c(-3.1, 3.1))
+
+
+
+
+db3 %>% 
+  # mutate(`Scor Z BMI` = ifelse(`Scor Z BMI`==1.52, 5, `Scor Z BMI`)) %>%
+  ggplot() +
+  aes(y=`Scor Z BMI`, x = `BMI`) +
+  facet_grid(.~`Sex`) +
+  
+  #geom_histogram(alpha=0.5, aes(fill=factor(`Age (years)`, levels = 1:18)), breaks=seq(-10, 10, 0.5)) + 
+  geom_point(alpha=0.75, aes(fill=`Age (years)`), size=3, shape=21, color="grey") + 
+  geom_smooth(fullrange=T, se=F, method = lm, size=0.25)+
+  geom_smooth(fullrange=T, se=F, method = deming, size=0.25, color="black")+
+  ggrepel::geom_text_repel(aes(label=`Scor Z BMI`), size=2, hjust=0.5, vjust=0.5, color="grey30", segment.color = "grey30", segment.size = 0.2)+
+  
+  scale_fill_distiller("Age (years)", palette = "Spectral", breaks=0:18)+
+  # scale_color_discrete("Age (years)", drop=F)+
+  legend.top + theme(legend.key.width = unit(20, "mm")) +
+  
+  scale_y_continuous(limits=c(-3.1, 3.1), breaks=-10:10)
+
+
+```
+
+# Methods
+
+## Abbreviations
+
+* DM: diabetes mellitus
+* BMI: body-mass index (kg/m²)
+* TNF-alpha: Tumor necrosis factor alpha
+* HbA1C: glycosilated hemoglobin
+* HDL cholesterol:
+* A1AT: Alpha-1 antitrypsin
+* MW: Mann-Whitney test
+* 95% CI: 95% confidence interval
+* OR: odds-ratio
+* SD: standard deviation
+* SE: stadard error
+
+## Study design
+
+We performed a retrospective case-control study comparing children with type I DM to otherwise healthy controls. Patients were included between ... from the electronic records of our institution (The First Pediatrics Clinic of the County Children's Hospital in Cluj-Napoca, Romania). 
+
+## Patient data collection
+
+We calculated Z-scores for BMI, Weight and Length / Height using the 'anthro' R package (https://CRAN.R-project.org/package=anthro) with 2006 references for patients aged 0 to 5 or using the R tools provided by WHO (https://www.who.int/growthref/tools/) with 2007 references for patients aged 5 to 18.
+
+Based on our laboratory's reference values, patients were classified as low risk of type 2 DM if adiponectin values were >10 μg/mL and medium or high risk otherwise. A similar classification was performed using TNF-alpha values: normal risk ≤8.1 pg/mL, high risk otherwise.
+
+For all patients, legal caretakers signed an informed consent form at admission allowing anonymized research on data included in our hospital's electronic database.
+
+## Data analysis
+
+Patient's data was manually collected into a spreadsheet for prepossessing then imported into R 3.6.2 for statistical analysis. 
+We used descriptive methods as appropriate: numeric and percent frequencies, means ± standard deviation and medians with extreme values. We also reported geometric means and geometric standard deviations for adiponectin and TNF-alpha values. 
+We compared the DM group to the control group using univariate methods: odds-ratio (OR) with Fisher test for binary variables, Cramér's V coefficient with Chi² test for other categorical variables, T and Mann-Whitney (MW) for normally and non-normally distributed numerical variables, respectively. 
+Correlations between adiponectin or TNF-alpha and other numerical variables were studied using Spearman's rho coefficients for all patients as well as separately for both groups.
+We used logistic models for OR (95% CIs) of DM by Adiponectin or TNF alpha, unadjusted (models 1, used as reference for deviance tests with the multivariate models) and adjusted for BMI Z score (models 2), Age at inclusion and Sex (models 3), and all three covariates combined (models 4). Both adiponectin and TNF-alpha values were transformed to base 2 logarithms prior to logistic regression, therefore odds ratios are referenced to every doubling of the original values. 
+
+# Results
+
+We included 52 type I DM patients (mean age at inclusion 11.94 ±4.45, 57.7% girls) and 66 controls (mean age at inclusion 11.09 ±4.82, 48.5% girls). DM patients had significantly higher mean Z scores for weight compared to control patients (0.898 ±1.24 vs. -0.317 ±1.05, p<0.001) as well as for BMI (0.298 ±1.15 vs. -0.459 ±1.61, p=0.011). 
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+
+cat("\n\n")
+cat(tab_caption("t.grup.demo+antropo", "Demographic and anthropometric description of the sample comparing the two groups. Z-scores were calculated using the 'anthro' R package (https://CRAN.R-project.org/package=anthro) with 2006 references for ages 0 to 5 and using the R tools provided by WHO (https://www.who.int/growthref/tools/) with 2007 references for ages 5 to 18."))
+cat("\n\n")
+
+x <- c("Group", 
+       # my.groups[["Demographics"]], my.groups[["Anthropometrics"]],
+       "Age (years)", "Sex", "Place of living", 
+       "zwei", "zlen", "zbmi")
+
+baza_de_date %>% select(x) %>% 
+  # DescTools::Desc()
+  make_summary_table(dep="Group", g.rows = c("mean_sd"), prefer = "parametric", #, "med_iqr" #, phi=T
+                     med_range_string = "M (range)",
+                     footnote = list(lang="en", values=c("mean_sd", "Welch", "OR/RR")),
+                     header = list(lang="en", columns=c("Factor", "Levels", "Total", "Statistics")),
+                     metadata = metadata)
+
+# citation("anthro")
+```
+
+Both groups had statistically similar adiponectin levels (median: 13.57, range=6.82:26.61 vs. 13.85 range=7.05:22.31, p=0.774) and a similar proportion of high / medium risk patients based on adiponectin values (19.2% vs. 15.2%, OR=1.33, p=0.625).
+DM patients had significantly higher TNF-alpha levels compared to controls (median: 9.7, range=5.3:27.1 vs. 7.1, range=5.6:15.5, p<0.001) and a significantly higher proportion of high risk patients based on TNF-alpha values (80.8%, vs. 12.1%, OR=30.45, p<0.001).
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+cat("\n\n")
+cat(tab_caption("t.grup.adipo+TNF", "Adiponectin (μg/mL) and TNF-alpha (pg/mL) values by group, as well as risk of type 2 DM, based their values. Since both adiponectin and TNF-alpha distributions are skewed, we also provided geometric means and standard deviations."))
+cat("\n\n")
+
+x <- c("Group", "Adiponectin", "Adiponectin risk", "TNF alpha", "TNF alpha risk")
+
+baza_de_date %>% select(x) %>% 
+  # mutate(`log2 Adiponectin` = log2(`Adiponectin`) %>% set_label("log2: " %+% metadata.var_to_labels("Adiponectin", metadata)), 
+  #        `log2 TNF alpha` = log2(`TNF alpha`) %>% set_label("log2: " %+% metadata.var_to_labels("TNF alpha", metadata))) %>%
+  # DescTools::Desc()
+  make_summary_table(dep="Group", g.rows = c("mean_sd", "med_range", "geo_mean"), prefer = "nonparametric", #, "med_iqr", "min_med_max" #, phi=T
+                     med_range_string = "M (range)",
+                     footnote = list(lang="en", values=c("med_range", "mean_sd", "geo_mean", "MW", "OR/RR")),
+                     header = list(lang="en", columns=c("Factor", "Levels", "Statistics")),
+                     metadata = metadata)
+
+```
+
+```{r echo=F, fig.height=2.5, fig.width=3, message=F, warning=F, dpi=144, results="asis", include=T}
+set.seed(6)
+
+box.adipo <- baza_de_date %>% my_box(y = "Adiponectin", x = "Group", metadata = metadata, range = F, outlier.size = 1) + 
+  # scale_y_continuous("Cases", limits = c(0, 100), breaks=seq(0, 100, 10)) + 
+  no.grid.x + no_legend + no.title.y +
+  labs(subtitle = metadata.var_to_labels("Adiponectin", metadata)) 
+
+
+box.TNF <- baza_de_date %>% my_box(y = "TNF alpha", x = "Group", metadata = metadata, range = F, outlier.size = 1) + 
+  # scale_y_continuous("", limits = c(0, 100), breaks=seq(0, 100, 10)) + 
+  no.grid.x + no_legend + no.title.x + no.title.y +
+  labs(subtitle = metadata.var_to_labels("TNF alpha", metadata)) +
+  theme(plot.margin = margin(l=5, "mm"))
+
+cowplot::plot_grid(box.adipo, box.TNF, rel_widths = c(1, 1), align = "hv", axis = "tlbr")
+
+cat("\n\n")
+cat(fig_caption("box.grup.adipo+TNF", "Adiponectin (μg/mL) and TNF-alpha (pg/mL) values by groups (◆ mean, — median, + outliers)."))
+cat("\n\n")
+
+```
+
+```{r echo=F, fig.height=2, fig.width=5, message=F, warning=F, dpi=144, results="asis", include=T}
+
+histo.adipo <- baza_de_date %>% my_histo(numerica = "Adiponectin", categ = "Group", metadata = metadata) + 
+  scale_y_continuous("Cases", limits = c(0, 100), breaks=seq(0, 100, 10)) + 
+  no.minor_grid.y + no_legend
+histo.TNF <- baza_de_date %>% my_histo(numerica = "TNF alpha", categ = "Group", metadata = metadata) + 
+  scale_y_continuous("", limits = c(0, 100), breaks=seq(0, 100, 10)) + 
+  no.minor_grid.y + no.labels.y + no.ticks.y
+
+cowplot::plot_grid(histo.adipo, histo.TNF, rel_widths = c(1.1, 1))
+
+cat("\n\n")
+cat(fig_caption("histo.grup.adipo+TNF", "Adiponectin (μg/mL) and TNF-alpha (pg/mL) values by groups (│ mean, ┆ median)."))
+cat("\n\n")
+
+```
+
+DM patients also have significantly lower Alpha-1 antitrypsin levels compared to controls (median: 134, range=104:201 vs. 155.5, range=98:240, p<0.001) and higher Total cholesterol (median: 169, range=111:353 vs. 155, range=99:200, p<0.001) and HbA1C (median: 8.7, range=6.7:15.4 vs. 4.85, range=4:5.9, p<0.001).
+
+```{r echo=F, fig.height=2.5, fig.width=3, message=F, warning=F, dpi=144, results="asis", include=T}
+cat("\n\n")
+cat(tab_caption("t.grup.lab", "Other laboratory values by groups."))
+cat("\n\n")
+
+x <- c("Group", "Alfa 1AT", "Trigliceride (mg/dl)", "Colesterol total  (mg/dl)", "HDL colesterol (mg/dl)", "HbA1C (%)")
+
+baza_de_date %>% select(x) %>% 
+  # mutate(`log2 Adiponectin` = log2(`Adiponectin`) %>% set_label("log2: " %+% metadata.var_to_labels("Adiponectin", metadata)), 
+  #        `log2 TNF alpha` = log2(`TNF alpha`) %>% set_label("log2: " %+% metadata.var_to_labels("TNF alpha", metadata))) %>%
+  # DescTools::Desc()
+  make_summary_table(dep="Group", g.rows = c("mean_sd", "med_range"), prefer = "nonparametric", #, "med_iqr", "min_med_max" #, phi=T
+                     med_range_string = "M (range)",
+                     footnote = list(lang="en", values=c("med_range", "mean_sd", "MW")),
+                     header = list(lang="en", columns=c("Factor", "Levels", "Statistics")),
+                     metadata = metadata)
+
+```
+
+With limited data avilable, none of the studied genes showed any significant differences in genotype distributions between cases and controls.
+
+```{r echo=F, fig.height=2.5, fig.width=3, message=F, warning=F, dpi=144, results="asis", include=T}
+cat("\n\n")
+cat(tab_caption("t.grup.genotypes", "Univariate statistics by groups of genotypes for several relevant genes, where available."))
+cat("\n\n")
+
+x <- c("Group", my.groups[["Genotype"]]) # "AdipoQ 1", "AdipoQ 2", "GSTM", "GSTT", "TNF alfa genotype"
+
+baza_de_date %>% select(x) %>% 
+  # DescTools::Desc()
+  make_summary_table(dep="Group", phi=T,
+                     footnote = list(lang="en", values=c("OR/RR", "V")),
+                     header = list(lang="en", columns=c("Factor", "Levels", "Statistics")),
+                     metadata = metadata)
+
+
+# Adipo Q genotype 1: HW p=0.331
+# Adipo Q genotype 2: HW p=0.189
+# TNF-alfa genotye: HW p=0.798
+```
+
+Aside from a patient with positive ANA antibodies (measured at age 7), control patients did not show any autoimmune disease, while 32.7% of DM patients had either BC, TAI or both (p<0.001, with median age 9 at onset). Atopies were found in approximately 17% in both groups. Neuropathy, nephropathy and retinopathy were found only in DM patients (36.5%, 11.5% and 4% respectively).
+
+```{r echo=F, fig.height=2.5, fig.width=3, message=F, warning=F, dpi=144, results="asis", include=T}
+cat("\n\n")
+cat(tab_caption("t.grup.ai", "Autoimmune pathology by groups."))
+cat("\n\n")
+
+x <- c("Group", 
+       "Autoimmune disease yes/no",
+       my.groups[["Autoimmune disease"]]) # "Autoimmune disease", "Age at onset of autoimmune disease (years)"
+       
+
+db <- baza_de_date %>% 
+  mutate(`Autoimmune disease yes/no` = ifelse(is.na(`Autoimmune disease`), NA, ifelse(`Autoimmune disease`=="no", "no", "yes")) %>%
+           factor(levels=c("yes", "no"))) %>%
+  mutate(`Autoimmune disease` = forcats::fct_rev(`Autoimmune disease`)) %>%
+  select(x)
+  # DescTools::Desc()
+
+db %>% make_summary_table(dep="Group", g.rows = c("mean_sd", "med_range"),
+                          med_range_string = "M (range)",
+                     footnote = list(lang="en", values=c("med_range", "mean_sd", "OR/RR", "MW")),
+                     header = list(lang="en", columns=c("Factor", "Levels", "Statistics")),
+                     metadata = make_metadata(db, vars = "Autoimmune disease yes/no", label = "Autoimmune disease", existing.metadata = metadata)) %>%
+  flextable::italic(i = 3:6, j=2:4)
+
+```
+
+```{r echo=F, fig.height=2.5, fig.width=3, message=F, warning=F, dpi=144, results="asis", include=T}
+cat("\n\n")
+cat(tab_caption("t.grup.comorbid", "Comorbidities, by groups."))
+cat("\n\n")
+
+x <- c("Group", rev(my.groups[["Comorbidities"]])) # "Neuropathy", "Nephropathy", "Retinopathy", "Atopies"
+       
+
+db <- baza_de_date %>% select(x)
+  # DescTools::Desc()
+db %>% make_summary_table(dep="Group", 
+                          footnote = list(lang="en", values=NA),
+                     header = list(lang="en", columns=c("Factor", "Levels", "Statistics")),
+                     metadata = metadata)
+
+```
+
+In DM patients, the most frequent complications were insulin lipodystrophies (67.3%), followed by Dawn phenomena (42.3%) and dyslipidemias (26.9%).
+
+```{r echo=F, fig.height=2.5, fig.width=3, message=F, warning=F, dpi=144, results="asis", include=T}
+cat("\n\n")
+cat(tab_caption("t.grup.complic", "Prevalence of DM complications."))
+cat("\n\n")
+
+baza_de_date %>% select(my.groups[["Other complications"]]) %>% 
+  make_summary_table(header = list(lang="en", columns=c("Factor", "Total"), labels = list(`Factor` = "Other complications", `Total` = "N (%)")),
+                     footnote = list(lang="en", values=NA),
+                     metadata = metadata)
+
+```
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=F, eval=F}
+
+x <- c("Group",
+       # my.groups[["Demographics"]],
+       "Age (years)", "Sex", "Place of living",
+       "zwei", "zlen", "zbmi",
+       "Adiponectin", "Adiponectin risk", "TNF alpha", "TNF alpha risk",
+       "Alfa 1AT", "Trigliceride (mg/dl)", "Colesterol total  (mg/dl)", "HDL colesterol (mg/dl)",
+       my.groups[["Genotype"]], # "AdipoQ 1", "AdipoQ 2", "GSTM", "GSTT", "TNF alfa genotype"
+       rev(my.groups[["Comorbidities"]]), # "Neuropathy", "Nephropathy", "Retinopathy", "Atopies"
+       my.groups[["Autoimmune disease"]]) # "Autoimmune disease", "Age at onset of autoimmune disease (years)"
+
+x <- c("Group", 
+       my.groups[c("Demographics", "Anthropometrics", "Laboratory", "Risk", "Diabetes", "Blood pressure", 
+                   "Autoimmune disease", "Complications", "Comorbidities", "Genotype", "Onset symptoms", "Other complications")] %>%
+         unlist(use.names = F))
+baza_de_date %>%
+  select(x) %>%
+  # mutate(`log2 Adiponectin` = log2(`Adiponectin`) %>% set_label("log2: " %+% metadata.var_to_labels("Adiponectin", metadata)), 
+  #        `log2 TNF alpha` = log2(`TNF alpha`) %>% set_label("log2: " %+% metadata.var_to_labels("TNF alpha", metadata))) %>%
+  make_summary_table(dep="Group", g.rows = c("mean_sd", "med_range", "med_iqr"), phi=T,
+                     footnote = list(lang="en"), 
+                     header = list(lang="en", columns=c("Factor", "Levels", "Total", "Statistics")),
+                     metadata = metadata)
+
+
+```
+
+## Correlations: Adiponectia, TNF alpha
+
+Adiponectin values were not significantly correlated to TNF-alpha values, in neither of the 2 groups. In DM patients, higher Adiponectin and TNF-alpha values were significantly correlated to lower Ages at inclusion and at onset of DM. In addition, TNF-alpha showed significant negative correlations with Age at onset of autoimmune disease and HDL cholesterol. These correlations decreased to statistical insignificance in controls, with the exception of Adiponectin to Age at inclusion which decreased but remained statistically significant. Overall, HbA1C (%) was significantly correlated to TNF-alpha, but not in separate groups because HbA1C values formed clusters with weaker intra-cluster correlations compared to between-clusters.
+
+```{r echo=F, fig.height=5, fig.width=3.7, message=F, warning=F, dpi=144, results="asis", include=T}
+# nums <- c("zwei", "zlen", "zbmi", 
+#           metadata$Var[metadata$Role %in% c("numeric")]) %>% unique()
+# nums <- nums[nums %!in% c("Weight (kg)", "Height (cm)","BMI")]
+
+nums <- c("Adiponectin" , "TNF alpha",
+          "zwei", "zlen", "zbmi", 
+          "Age (years)", "Age at onset (years)", "Age at onset of autoimmune disease (years)", 
+          "Glycaemia (mg/dL)", "HbA1C (%)", "Insulin necessity", 
+          #"SBP (mmHg)", "DBP (mmHg)",
+          "Alfa 1AT", "Colesterol total  (mg/dl)", "HDL colesterol (mg/dl)" , "Trigliceride (mg/dl)"
+          )
+MC0 <- baza_de_date %>%
+  select(c(nums)) %>% 
+  multicor(y=c("Adiponectin", "TNF alpha"), x=nums, t.2_lines = F, p.style = "pstars", chart.flip=T, wrap.x = 10, na.value = "black",
+                          metadata = metadata) 
+
+cat("\n\n")
+cat(tab_caption("t.heatmap", "Correlation matrix of Adiponectin and TNF-alpha values with several other parameters (Spearman's R coefficients)."))
+cat("\n\n")
+MC0$t  %>% flextable::hline(i = c(2, 5, 8, 11), part = "body", border = officer::fp_border())
+cat("\n\n")
+# MC0$p + coord_fixed(1/1.5)
+
+MC.DM <- baza_de_date %>%
+  filter(`Group` == "DM") %>%
+  select(c(nums)) %>% 
+  multicor(y=c("Adiponectin", "TNF alpha"), x=nums, t.2_lines = F, p.style = "pstars", chart.flip=T, wrap.x = 10, na.value = "black",
+                          metadata = metadata) 
+cat("\n\n")
+MC.DM$t  %>% flextable::hline(i = c(2, 5, 8, 11), part = "body", border = officer::fp_border())
+cat("\n\n")
+# MC.DM$p + coord_fixed(1/1.5)
+
+MC.control <- baza_de_date %>%
+  filter(`Group` == "control") %>%
+  select(c(nums)) %>% 
+  multicor(y=c("Adiponectin", "TNF alpha"), x=nums, t.2_lines = F, p.style = "pstars", chart.flip=T, wrap.x = 10, na.value = "black",
+                          metadata = metadata) 
+cat("\n\n")
+MC.control$t  %>%  flextable::hline(i = c(2, 5, 8, 11), part = "body", border = officer::fp_border())
+cat("\n\n")
+# MC.control$p + coord_fixed(1/1.5)
+
+
+
+legend <- cowplot::get_legend(MC.control$p + legend.bottom + 
+                                guides(fill=guide_colorbar(title = "R (Spearman)", title.position = "top", raster = F, nbin = 17)) +
+                                theme(legend.key.width = unit(18, "mm"), 
+                                      legend.key.height = unit(3, "mm"), 
+                                      # legend.text = element_text(angle=90, hjust=0.5, vjust=0.5), 
+                                      legend.text = element_text(size=8)))
+
+cowplot::plot_grid(
+  cowplot::plot_grid(MC0$p + coord_fixed(1/1.25) + no_legend +
+                       theme(axis.ticks = element_blank(), axis.text = element_text(size=8),
+                             plot.margin = margin(t=0, b=0, l=0, r=0, "mm")) +
+                       labs(subtitle = "Overall"),
+                     MC.DM$p + coord_fixed(1/1.25) + no_legend + 
+                       theme(axis.text.y = element_blank(), axis.ticks = element_blank(), axis.text = element_text(size=8),
+                             plot.margin = margin(t=0, b=0, l=0, r=0, "mm")) + 
+                       labs(subtitle = "DM"),
+                     MC.control$p + coord_fixed(1/1.25) + no_legend +
+                       theme(axis.text.y = element_blank(), axis.ticks = element_blank(), axis.text = element_text(size=8),
+                             plot.margin = margin(t=0, b=0, l=0, r=0, "mm")) + 
+                       labs(subtitle = "Control"),
+                     
+                     # nrow=1, rel_widths = c(5, 2.14, 3.52)
+                     nrow=1, rel_widths = c(2.9, 1, 1)
+                     ),
+  legend, ncol=1, rel_heights = c(20, 2))
+
+cat("\n\n")
+cat(fig_caption("f.heatmap", "Correlation matrix of Adiponectin and TNF-alpha values with several other parameters (Spearman's R coefficients, statistically insignifficant values crossed out)."))
+cat("\n\n")
+
+```
+
+```{r echo=F, fig.height=3, fig.width=3.75, message=F, warning=F, dpi=144, results="asis", include=T}
+
+baza_de_date %>% my_scatter(x="Adiponectin", y="TNF alpha", 
+                            shape = "Group", color = "Group",
+                            # shape="Sex",
+                            alpha = 0.75, stroke = 0.2,
+                            metadata = metadata) +
+  scale_size_area("", max_size = 3, guide=F) +
+  scale_shape_manual("Group", values=c(21, 23))+
+  geom_hline(yintercept = c(8.1), size=0.5, color="black", lty="dotted") +
+  geom_vline(xintercept = c(4, 7, 10), size=0.5, color="black", lty="dotted")+
+  legend.top_right
+
+cat("\n\n")
+cat(fig_caption("f.adipo~TNF", "Correlation between Adiponectin and TNF-alpha (Spearman's R coefficient). Reference values marked by dotted lines at 8.1 pg/mL for TNF-alpha and at 4, 7, an 10 μg/mL for adiponectin."))
+cat("\n\n")
+```
+ 
+```{r echo=F, fig.height=4, fig.width=8, message=F, warning=F, dpi=144, results="asis", include=F}
+
+baza_de_date %>% my_scatter(x="Adiponectin", y="TNF alpha", 
+                            facet = "Group", color = "zbmi",
+                            # shape="Sex",
+                            alpha = 1, 
+                            metadata = metadata) +
+  scale_fill_distiller(metadata.var_to_labels("zbmi", metadata), palette = "RdYlBu",
+                        limits = c(-5, 5), breaks = seq(-10, 10,1)) +
+  theme(legend.key.height = unit(15, "mm")) +
+  scale_size_area("", max_size = 3, guide=F) +
+  # scale_shape_manual("Sex", values=c(21, 23))+
+  geom_hline(yintercept = c(8.1), size=0.2, color="black", lty="dotted") +
+  geom_vline(xintercept = c(4, 7, 10), size=0.2, color="black", lty="dotted")
+
+baza_de_date %>% my_scatter(x="Adiponectin", y="TNF alpha", 
+                            facet = "Group", color = "Sex",
+                            alpha = 0.75, 
+                            metadata = metadata) +
+  # scale_fill_distiller(metadata.var_to_labels("zbmi", metadata), palette = "RdYlBu",
+  #                       limits = c(-5, 5), breaks = seq(-10, 10,1)) +
+  # theme(legend.key.height = unit(15, "mm")) +
+  scale_size_area("", max_size = 3, guide=F) +
+  geom_hline(yintercept = c(8.1), size=0.2, color="black", lty="dotted") +
+  geom_vline(xintercept = c(4, 7, 10), size=0.2, color="black", lty="dotted")
+
+db <- baza_de_date %>% 
+  # mutate(`Durata` = (`Age (years)` - `Age at onset (years)`) / `Age (years)`) %>%
+  # mutate(`Durata` = (`Age (years)` - `Age at onset (years)`) * `Age at onset (years)`) %>%
+  mutate(`Durata` = `Age (years)` - `Age at onset (years)`) %>%
+  mutate(`Onset2` = cut(`Age at onset (years)`, seq(0, 20, 4), include.lowest = T))
+# summary(db$Durata)
+
+db %>% my_scatter(x="Durata", y="Adiponectin", 
+                  # facet = "Sex",
+                  # color = "Age at onset (years)",
+                  color="Onset2",
+                  alpha = 1,
+                  metadata = make_metadata(db, vars = c("Durata", "Onset2"), existing.metadata = metadata, 
+                                           label = c("Duration of DM evolution (years)","Age at onset (years)") )) +
+  scale_fill_brewer(metadata.var_to_labels("Age at onset (years)", metadata), palette = "RdYlBu", direction = -1)+
+  scale_color_brewer(metadata.var_to_labels("Age at onset (years)", metadata), palette = "RdYlBu", direction = -1)+
+  # scale_fill_distiller(metadata.var_to_labels("Age at onset (years)", metadata), palette = "RdYlBu",
+  #                       limits = c(0, 16), breaks = seq(0, 20,1)) +
+  # theme(legend.key.height = unit(15, "mm")) +
+  scale_size_area("", max_size = 3, guide=F) +
+  # geom_hline(yintercept = c(8.1), size=0.2, color="black", lty="dotted") +
+  geom_hline(yintercept = c(4, 7, 10), size=0.2, color="black", lty="dotted")
+
+db %>% my_scatter(x="Durata", y="TNF alpha", 
+                  # facet = "Sex",
+                  # color = "Age at onset (years)",
+                  # shape="Sex",
+                  color="Onset2", 
+                  alpha = 1,
+                  metadata = make_metadata(db, vars = c("Durata", "Onset2"), existing.metadata = metadata, 
+                                           label = c("Duration of DM evolution (years)","Age at onset (years)") )) +
+  scale_fill_brewer(metadata.var_to_labels("Age at onset (years)", metadata), palette = "RdYlBu", direction = -1)+
+  scale_color_brewer(metadata.var_to_labels("Age at onset (years)", metadata), palette = "RdYlBu", direction = -1)+
+  # scale_fill_distiller(metadata.var_to_labels("Age at onset (years)", metadata), palette = "RdYlBu",
+  #                       limits = c(0, 16), breaks = seq(0, 20,1)) +
+  # theme(legend.key.height = unit(15, "mm")) +
+  scale_size_area("", max_size = 3, guide=F) +
+  # scale_shape_manual("Sex", values=c(21, 23))+
+  # scale_shape_manual("Sex", values=c("♀", "♂"))+
+  geom_hline(yintercept = c(8.1), size=0.2, color="black", lty="dotted")
+
+baza_de_date %>% my_scatter(x="HbA1C (%)", y="TNF alpha", 
+                            color = "Group",
+                            # shape="Sex",
+                            alpha = 1, 
+                            metadata = metadata) +
+  # scale_fill_distiller(metadata.var_to_labels("zbmi", metadata), palette = "RdYlBu",
+  #                       limits = c(-5, 5), breaks = seq(-10, 10,1)) +
+  theme(legend.key.height = unit(15, "mm")) +
+  # scale_shape_manual("Sex", values=c(21, 23))+
+  scale_size_area("", max_size = 3, guide=F) +
+  scale_shape_manual("Sex", values=c(21, 23))+
+  geom_hline(yintercept = c(8.1), size=0.2, color="black", lty="dotted") +
+  geom_vline(xintercept = c(4, 7, 10), size=0.2, color="black", lty="dotted")
+
+
+
+```
+
+## Multivariate models 
+
+Odds of DM significantly increased with every doubling of TNF-alpha vales, unadjusted (OR=42.40 \*\*\*, 11.04 – 221.00) as well as adjusted for BMI Z scores (OR=36.36 \*\*\*, 9.52 – 187.95), Age & Sex (OR=129.30 \*\*\*, 24.7 to 999.2) and BMI, Age and Sex (OR = 118.16 \*\*\*, 22.13 to 934.82).
+
+Odds of DM did not increase with every doubling of Adiponectin vales, unadjusted (OR=0.99, 0.42 – 2.36) or adjusted for BMI Z scores (OR=1.07, 0.44 to 2.62), Age & Sex (OR=1.13, 0.46 to 2.82) or BMI, Age and Sex (OR = 1.18, 0.471to 2.991).
+
+```{r echo=F, fig.height=2, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=F}
+models <- function (db, v_outcome, v_pred, metadata2) {
+  lm1 <- glm(data=db, formula=as.formula(.(v_outcome) %+% "~" %+% .(v_pred)), family = "binomial") #%>% summary
+  lm2 <- update(lm1, .~. + `zbmi` )
+  lm3 <- update(lm1, .~. + `Age..years.` + `Sex` )
+  lm4 <- update(lm1, .~. + `zbmi` + `Age..years.` + `Sex` )
+  
+  dv.names <- names(coefficients(lm4))[-1]
+  dv.labels <- sjlabelled::get_term_labels(lm4, prefix = "label")[dv.names]
+  
+  # stargazer::stargazer(lm1, lm2, lm3, lm4, type = "text")
+  tab <- sjPlot::tab_model(lm1, lm2, lm3, lm4,
+                    show.intercept = F,
+                    show.aic = T, show.dev = T, show.loglik = T,
+                    show.p = T, collapse.ci = T, p.style = "asterisk")
+  
+  forest <- sjPlot::plot_models(lm1, lm2, lm3, lm4, 
+                      m.labels = c(metadata.var_to_labels(v_outcome, metadata2),"+BMI", "+Age&Sex", "+BMI+Age&Sex"),
+                      legend.title = metadata.var_to_labels(v_pred, metadata2) %+% " by:", 
+                      wrap.legend.title = 50,
+                      spacing = 0.75, dot.size = 2,
+                      show.values = F, show.p = T, p.shape = T,
+                      digits = 3, prefix.labels = "label") +
+    scale_y_log10("Odds-ratio, 95% CI (log scale)",
+                  #limits = c(1/8, 8), 
+                  breaks = c(1/(2^(10:1)), 2^(0:10)), 
+                  labels = c("1/" %+% 2^(10:1), 1, 2^(1:10))) +
+    scale_x_discrete(limits=dv.names, labels=dv.labels) +
+    legend.right
+  
+  anova_table <- anova(lm1, lm2, lm3, lm4, test="Chisq")$`Pr(>Chi)` %>% 
+    set_names(c("lm1", "lm2", "lm3", "lm4"))
+  
+  anova_table_rao <- anova(lm1, lm2, lm3, lm4, test="Rao")$`Pr(>Chi)` %>% 
+    set_names(c("lm1", "lm2", "lm3", "lm4"))
+  
+  anova(lm1, lm2, test="Chisq")
+  anova(lm1, lm3, test="Chisq")
+  anova(lm1, lm4, test="Chisq")
+  
+  return (list(tab=tab, forest=forest, lm1=lm1, lm2=lm2, lm3=lm3, lm4=lm4, 
+               anova_table=anova_table, anova_table_rao=anova_table_rao))
+}
+
+```
+
+```{r echo=F, fig.height=2.5, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+# db <- baza_de_date %>% 
+#   mutate(`Group` = forcats::fct_rev(`Group`)) %>%
+#   mutate(`Adiponectin` = log2(`Adiponectin`) %>% set_label("log2: " %+% metadata.var_to_labels("Adiponectin", metadata)), 
+#          `TNF alpha` = log2(`TNF alpha`) %>% set_label("log2: " %+% metadata.var_to_labels("TNF alpha", metadata))) %>%
+#   # mutate(`TNF alpha risk` = forcats::fct_rev(`TNF alpha risk`)) %>%
+#   select(c("Group", "Adiponectin", "TNF alpha", "Adiponectin risk", "TNF alpha risk", "Age (years)", "Sex", "zbmi")) %>%
+#   set_colnames(make.names(colnames(.))) 
+# 
+# # str(db)
+# 
+# metadata2 <- metadata
+# metadata2$Label[metadata2$Var == "Adiponectin"] <- "log2: " %+% metadata.var_to_labels("Adiponectin", metadata)
+# metadata2$Label[metadata2$Var == "TNF alpha"] <- "log2: " %+% metadata.var_to_labels("TNF alpha", metadata)
+# metadata2$Var <- make.names(metadata$Var)
+# 
+# v_outcome = "Group"
+# v_pred = "TNF.alpha"
+
+models2 <- function (db, v_outcome, v_pred, metadata2, labs.y=1/64, min.y=1/8, max.y=1024) {
+  lm1 <- glm(data=db, formula=as.formula(.(v_outcome) %+% "~" %+% .(v_pred)), family = "binomial") #%>% summary
+  lm2 <- update(lm1, .~. + `zbmi` )
+  lm3 <- update(lm1, .~. + `Age..years.` + `Sex` )
+  lm4 <- update(lm1, .~. + `zbmi` + `Age..years.` + `Sex` )
+  
+  dv.names <- names(coefficients(lm4))[-1]
+  dv.labels <- sjlabelled::get_term_labels(lm4, prefix = "label")[dv.names]
+  
+  # stargazer::stargazer(lm1, lm2, lm3, lm4, type = "text")
+  # tab <- sjPlot::tab_model(lm1, lm2, lm3, lm4,
+  #                   show.intercept = F,
+  #                   show.aic = T, show.dev = T, show.loglik = T,
+  #                   show.p = T, collapse.ci = T, p.style = "asterisk")
+  
+  # forest <- sjPlot::plot_models(lm1, lm2, lm3, lm4, 
+  #               m.labels = c(metadata.var_to_labels(v_outcome, metadata2),"+BMI", "+Age&Sex", "+BMI+Age&Sex"),
+  #                     legend.title = metadata.var_to_labels(v_pred, metadata2) %+% " by:", 
+  #                     wrap.legend.title = 50,
+  #                     spacing = 0.75, dot.size = 2,
+  #                     show.values = F, show.p = T, p.shape = T,
+  #                     digits = 3, prefix.labels = "label") +
+  #   scale_y_log10("Odds-ratio, 95% CI (log scale)",
+  #                 #limits = c(1/8, 8), 
+  #                 breaks = c(1/(2^(10:1)), 2^(0:10)), 
+  #                 labels = c("1/" %+% 2^(10:1), 1, 2^(1:10))) +
+  #   scale_x_discrete(limits=dv.names, labels=dv.labels) +
+  #   legend.right
+  
+  anova_table <- anova(lm1, lm2, lm3, lm4, test="Chisq")$`Pr(>Chi)` %>% 
+    set_names(c("lm1", "lm2", "lm3", "lm4"))
+  
+  anova_table_rao <- anova(lm1, lm2, lm3, lm4, test="Rao")$`Pr(>Chi)` %>%
+    set_names(c("lm1", "lm2", "lm3", "lm4"))
+  
+  anova2 <- anova(lm1, lm2, test="Chisq")
+  anova3 <- anova(lm1, lm3, test="Chisq")
+  anova4 <- anova(lm1, lm4, test="Chisq")
+  
+  # return (list(tab=tab, forest=forest, lm1=lm1, lm2=lm2, lm3=lm3, lm4=lm4, 
+               # anova_table=anova_table, anova_table_rao=anova_table_rao))
+# }
+
+dv.labels["(Intercept)"] <- "(Intercept)"
+df_models <- bind_rows(
+  `alone` = broom::tidy(lm1)  %>% cbind(exp(confint(lm1)) ),
+  `+ BMI Z score` = broom::tidy(lm2)  %>% cbind(exp(confint(lm2)) ),
+  `+ Age + Sex` = broom::tidy(lm3)  %>% cbind(exp(confint(lm3)) ),
+  `+ BMI Z score + Age + Sex` = broom::tidy(lm4)  %>% cbind(exp(confint(lm4)) ),
+  .id = "Model") %>% 
+  # mutate(`Model` = as.factor(`Model`)) %>% str
+  mutate(`Effect` = dv.labels[`term`] %>% factor(levels = dv.labels)) %>%
+  mutate(`OR` = exp(`estimate`)) %>%
+  mutate(`p-stars` = pstars(`p.value`), `p (signif.)` = scales::pvalue(`p.value`)) %>%
+  mutate(`Adj-OR` = limit_between(`OR`, low =  2^-10, high=2^10), 
+         `lcl` = limit_between(`2.5 %`, low =  2^-10, high=2^10), 
+         `ucl` = limit_between(`97.5 %`, low = 2^-10, high=2^10)) %>% 
+  mutate(Label= `Adj-OR` %+% `p-stars` %+% " (" %+% lcl %+% " - " %+% ucl %+% ")") %>%
+  mutate(
+    `low`  = limit_between(`2.5 %`,  low =  2^-10, to.string = F),
+    `high` = limit_between(`97.5 %`, high = 2^10,   to.string = F),
+    `p_low` =  ifelse(`2.5 %`  <= 2^-10, "≺", "|"),
+    `p_high` = ifelse(`97.5 %` >= 2^10,  "≻", "|") ) 
+
+# df_models$Model[df_models$Model=="alone"] <- metadata.var_to_labels(v_pred, metadata2)
+df_models$Model[df_models$Model=="alone"] <- "TNF-alpha / Adiponectin"
+df_models$Model <- factor(df_models$Model, 
+                          levels=c(#metadata.var_to_labels(v_pred, metadata2),
+                                   "TNF-alpha / Adiponectin",
+                                   "+ Age + Sex",
+                                   "+ BMI Z score",
+                                   "+ BMI Z score + Age + Sex"))
+df_models %<>% arrange(`Model`)
+
+dv.labels <- dv.labels[dv.labels != "(Intercept)"]
+df_models %<>% filter(`term` != "(Intercept)")
+
+df_models$Label[df_models$Model %!in% c(
+  # "+ BMI Z score + Age + Sex", metadata.var_to_labels(v_pred, metadata2))] <- NA
+  "+ BMI Z score + Age + Sex", "TNF-alpha / Adiponectin")] <- NA
+
+forest <- df_models %>% ggplot(aes(x=`Effect`, y=`OR`, color=`Model`)) +
+  # scale_y_discrete(limits=rev(td3$`Effect`), labels = rev(td3$`Label`)) +
+  geom_hline(yintercept = 1, size=3, color="white") + geom_hline(yintercept = 1, size=0.5, color="grey30") +
+  
+  geom_point(size=2, position=position_dodge(width = 0.75))+
+  geom_linerange(aes(ymin=`low`, ymax=`high`), height=0, size=0.5, position=position_dodge(width = 0.75))  +
+  geom_point(aes(y=`low`), size=3, shape=df_models$p_low, position=position_dodge(width = 0.75))  +
+  geom_point(aes(y=`high`), size=3, shape=df_models$p_high, position=position_dodge(width = 0.75))  +
+  geom_text(aes(label=`Label`, vjust=-as.numeric(`Model`)/2+1.5), hjust=0, size=3, parse=F, y=log10(labs.y)) +
+
+  
+  # annotate("text", label=c("Hepatită E / A\n(%, semnif.)", "(Vârsta & Sex)", "(Comorbiditâți)"), 
+  #          y=c(1/3, 45, 110), x=length(dv.labels)+1, size=3, hjust=0.5, vjust=0, color=c("black", "brown", "blue"))+
+  # annotate("text", label=c("Adj. p-values:"),
+  # annotate("text", label=c("valori p ajustate:"), 
+  #          y=45, x=length(dv.labels)+1.5, size=3, hjust=0.5, vjust=0)+
+  # geom_vline(xintercept = length(dv.labels)+0.8, size=0.25, linetype="dashed") +
+  # geom_text(aes(label=`Summary`), x=log10(1/3), size=3, hjust=0.5, color="black", parse = F) +
+  # geom_text(aes(label=`p (signif.)`), x=log10(44), size=3, hjust=0.5, parse=F, color="brown") +
+  # geom_text(aes(label=`p (signif.)`), data=model, x=log10(100), size=3, hjust=0.5, parse=F, color="blue") +
+  # annotate("text", label=c("< hepatitis A", "hepatitis E >"),
+  # annotate("text", label=c("< hepatita A", "hepatita E >"), 
+  #          y=c(1/1.05, 1.05), x=0.2, size=2.75, hjust=c(1, 0))+
+  # geom_vline(xintercept = 0.5, size=0.25, linetype="dashed") +
+  
+  # scale_color_manual(values = c(`FALSE` = "blue", `TRUE` = "black"))+
+  # scale_color_manual(values = c(`1` = "blue", `2` = "black"))+
+  scale_color_brewer("Model", palette = "Dark2", direction = -1, limits=levels(df_models$`Model`)) +
+  # scale_x_discrete(limits=levels(df_models$`Effect`)) + 
+  scale_y_log10("Adjusted Odds-Ratio (95% CI) of DM", limits=c(2^-15, 2^15),
+                breaks = c(1/(2^(3:1)), 2^(0:15)), 
+                labels = c("1/" %+% 2^(3:1), "❶", 2^(1:15)), 
+                minor_breaks = NULL)+
+  # coord_cartesian(ylim = c(1/4, 128), xlim = c(0.5, length(dv.labels)+1.5)) +
+  # labs(y=NULL, title = "Comorbidites: Hepatits E vs. Hepatis A, summary and adjusted ORs") +
+  labs(x=NULL) + 
+  # no_legend +
+  coord_flip(ylim = c(labs.y, max.y), xlim = c(1, length(dv.labels)))+
+  theme(axis.ticks.x = element_blank(), panel.grid.major.y = element_line(linetype="dashed"), 
+        axis.text = element_text(color="black", size=10),
+        axis.title.y = element_text(hjust=0.5, size=10), 
+        plot.title = element_text(size=11))  
+
+return (list(tab=df_models, forest=forest, lm1=lm1, lm2=lm2, lm3=lm3, lm4=lm4,
+anova_table=anova_table, anova_table_rao=anova_table_rao,
+anova2=anova2, anova3=anova3, anova4=anova4))
+}
+
+# models2(db, v_outcome, v_pred, metadata2)$forest
+```
+
+```{r echo=F, fig.height=3.5, fig.width=7.45, message=F, warning=F, dpi=144, results="asis", include=T}
+db <- baza_de_date %>% 
+  mutate(`Group` = forcats::fct_rev(`Group`)) %>%
+  mutate(`Adiponectin` = log2(`Adiponectin`) %>% set_label("log2: " %+% metadata.var_to_labels("Adiponectin", metadata)), 
+         `TNF alpha` = log2(`TNF alpha`) %>% set_label("log2: " %+% metadata.var_to_labels("TNF alpha", metadata)), 
+         `Age (years)` = log2(`Age (years)`) %>% set_label("log2: " %+% metadata.var_to_labels("Age (years)", metadata))) %>%
+  # mutate(`TNF alpha risk` = forcats::fct_rev(`TNF alpha risk`)) %>%
+  select(c("Group", "Adiponectin", "TNF alpha", "Adiponectin risk", "TNF alpha risk", "Age (years)", "Sex", "zbmi")) %>%
+  set_colnames(make.names(colnames(.))) 
+
+# str(db)
+
+metadata2 <- metadata
+metadata2$Label[metadata2$Var == "Adiponectin"] <- "log2: " %+% metadata.var_to_labels("Adiponectin", metadata)
+metadata2$Label[metadata2$Var == "TNF alpha"] <- "log2: " %+% metadata.var_to_labels("TNF alpha", metadata)
+metadata2$Var <- make.names(metadata$Var)
+
+
+m1 <- models2(db, v_outcome = "Group", v_pred = "Adiponectin", metadata2, labs.y = 1/9, min.y=1/4, max.y=4)
+m2 <- models2(db, v_outcome = "Group", v_pred = "TNF.alpha", metadata2)
+
+cowplot::plot_grid(m2$forest + #legend.top_right +
+                     no.title.x +
+                     theme(legend.spacing = unit(2, "mm"), legend.box = "horizontal", 
+                           legend.position = c(0.95, 1), legend.justification = c(1, 1)) + 
+                     labs(subtitle = "with " %+% metadata.var_to_labels("TNF.alpha", metadata2)), 
+                   m1$forest + no_legend +
+                     #theme(legend.spacing = unit(0, "mm"), legend.title = element_blank()) + 
+                     labs(subtitle = "with " %+% metadata.var_to_labels("Adiponectin", metadata2)), 
+                   nrow=2, axis = "tblr", align="hv")
+
+
+cat("\n\n")
+cat(fig_caption("f.glm", "Logistic models for odds-ratios of DM by Adiponectin or TNF-alpha, unadjusted (purple) and adjusted for BMI Z score (orange), Age at inclusion and Sex (blue) and all three covariates combined (green). Adiponectin, TNF-alpha and age were transformed to base 2 logarithms, therefore odds ratios are referenced to every doubling of original values."))
+cat("\n\n")
+```
+
+```{r echo=F, fig.height=3.5, fig.width=7.45, message=F, warning=F, dpi=144, results="asis", include=T}
+# cat("\n\n")
+# cat(tab_caption("t.glm.adipo", "Logistic models for odds-ratios (95% CIs) of DM by Adiponectin, unadjusted (model 1, reference for Deviance test) and adjusted for BMI Z score (model 2, p=0.004), Age at inclusion and Sex (model 3, p=0.358), and all three covariates combined (model 4, p=0.013). Adiponectin values were transformed to base 2 logarithms, therefore odds ratios are referenced to every doubling of original values. Model statistics shown below."))
+# cat("\n\n")
+
+
+# m1$tab
+# m1$forest
+# m1$anova_table
+# m1$anova_table_rao
+
+# cat("\n\n")
+# cat(tab_caption("t.glm.tnf", "Logistic models for odds-ratios (95% CIs) of DM by TNF alpha, unadjusted (model 1, reference for Deviance test) and adjusted for BMI Z score (model 2, p=0.079), Age at inclusion and Sex (model 3, p=0.002), and all three covariates combined (model 4, p=0.0015). Adiponectin values were transformed to base 2 logarithms, therefore odds ratios are referenced to every doubling of original values. Model statistics shown below."))
+# cat("\n\n")
+
+
+# m2$tab
+# m2$forest
+# m2$anova_table
+# m2$anova_table_rao
+
+
+# m3 <- models(db, v_outcome = "Group", v_pred = "Adiponectin.risk", metadata2)
+# m3$tab
+# m3$forest
+# m3$anova_table
+# m3$anova_table_rao
+
+# m4 <- models(db, v_outcome = "Group", v_pred = "TNF.alpha.risk", metadata2)
+# m4$tab
+# m4$forest
+# m4$anova_table
+# m4$anova_table_rao
+
+```
+
+# Extra
+
+## Adiponectin
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+make_summary_table_cont(baza_de_date, continuous = "Adiponectin", gsd = T,
+                   metadata = metadata) %>% 
+  flextable::font(fontname = "Times New Roman", part="all")
+```
+
+### log2: Adiponectin
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+make_summary_table_cont(baza_de_date %>% mutate(`Adiponectin` = log2(`Adiponectin`)), 
+                        continuous = "Adiponectin", gsd = F,
+                   metadata = metadata) %>% 
+  flextable::font(fontname = "Times New Roman", part="all")
+```
+
+### Adiponectin risk
+
+Patients with high or medium risk based on andiponectin values had significantly higer BMI Z-scores, Age at onset and lower HDL values compared to low risk patients.
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+x <- c("Adiponectin risk", 
+       my.groups[c("Demographics", "Anthropometrics", "Laboratory", "Risk", "Diabetes", "Blood pressure", 
+                   "Autoimmune disease", "Complications", "Comorbidities", "Genotype", "Onset symptoms", "Other complications")] %>%
+         unlist(use.names = F))
+baza_de_date %>%
+  select(x) %>%
+  make_summary_table(dep="Adiponectin risk", # g.rows = c("mean_sd"), phi=T,
+                   footnote = list(lang="en"), 
+                   header = list(lang="en", columns=c("Factor", "Levels", "Total", "Statistics")),
+                   metadata = metadata)
+```
+
+### Group x adiponectin
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=F}
+x <- c("Group x adiponectin", 
+       my.groups[c("Demographics", "Anthropometrics", "Laboratory", "Risk", "Diabetes", "Blood pressure", 
+                   "Autoimmune disease", "Complications", "Comorbidities", "Genotype", "Onset symptoms", "Other complications")] %>%
+         unlist(use.names = F))
+baza_de_date %>%
+  select(x) %>%
+  make_summary_table(dep="Group x adiponectin", # g.rows = c("mean_sd"), phi=T,
+                   footnote = list(lang="en"), 
+                   header = list(lang="en", columns=c("Factor", "Levels", "Total", "Statistics")),
+                   metadata = metadata)
+```
+
+## TNF alpha
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+make_summary_table_cont(baza_de_date, continuous = "TNF alpha", gsd = T,
+                   metadata = metadata) %>%  
+  flextable::font(fontname = "Times New Roman", part="all")
+
+```
+
+### log2: TNF alpha
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+make_summary_table_cont(baza_de_date %>% mutate(`TNF alpha` = log2(`TNF alpha`)), 
+                        continuous = "TNF alpha", gsd = F,
+                   metadata = metadata) %>%  
+  flextable::font(fontname = "Times New Roman", part="all")
+```
+
+### TNF alpha risk
+
+Patients with high or medium risk based on TNF-alpha values had significantly higer Weight Z-scores, total cholesterol, HbA1C and lower Alpha-1 antitrypsin, Glycaemia values compared to low risk patients as well ashigher odds of Autoimmune disease.
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=T}
+x <- c("TNF alpha risk", 
+       my.groups[c("Demographics", "Anthropometrics", "Laboratory", "Risk", "Diabetes", "Blood pressure", 
+                   "Autoimmune disease", "Complications", "Comorbidities", "Genotype", "Onset symptoms", "Other complications")] %>%
+         unlist(use.names = F))
+baza_de_date %>%
+  select(x) %>%
+  make_summary_table(dep="TNF alpha risk", # g.rows = c("mean_sd"), phi=T,
+                   footnote = list(lang="en"), 
+                   header = list(lang="en", columns=c("Factor", "Levels", "Total", "Statistics")),
+                   metadata = metadata)
+```
+
+### Group x TNF alpha
+
+```{r echo=F, fig.height=4, fig.width=7, message=F, warning=F, dpi=144, results="asis", include=F}
+x <- c("Group x TNF alpha", 
+       my.groups[c("Demographics", "Anthropometrics", "Laboratory", "Risk", "Diabetes", "Blood pressure", 
+                   "Autoimmune disease", "Complications", "Comorbidities", "Genotype", "Onset symptoms", "Other complications")] %>%
+         unlist(use.names = F))
+baza_de_date %>%
+  select(x) %>%
+  make_summary_table(dep="Group x TNF alpha", # g.rows = c("mean_sd"), phi=T,
+                   footnote = list(lang="en"), 
+                   header = list(lang="en", columns=c("Factor", "Levels", "Total", "Statistics")),
+                   metadata = metadata)
+```
+
+
+# References
+
+1. R Core Team (2019). R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/.
+
